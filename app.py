@@ -25,7 +25,7 @@ country_map = {
 
 def get_gdp_ppp():
     indicators = {'NY.GDP.PCAP.PP.CD': 'GDP per capita PPP'}
-    data = wbdata.get_dataframe(indicators, country=list(country_map.keys()), data_date=datetime(2023, 1, 1))
+data = wbdata.get_dataframe(indicators, country=list(country_map.keys()))
     data.reset_index(inplace=True)
     df_latest = data.sort_values("date").drop_duplicates("country", keep="last")
     df_latest['Country'] = df_latest['country'].map(country_map)
