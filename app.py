@@ -1,126 +1,89 @@
-
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import dash
-from dash import dcc, html, dash_table, Input, Output
+from dash import dcc, html, Input, Output
+import plotly.express as px
+import pandas as pd
 import wbdata
+from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
 
-# --- List of post-Soviet countries ---
+# List of post-Soviet countries
 post_soviet = [
-    'Russia', 'Ukraine', 'Georgia', 'Kazakhstan', 'Belarus', 'Armenia', 'Azerbaijan',
-    'Moldova', 'Uzbekistan', 'Turkmenistan', 'Kyrgyzstan', 'Tajikistan', 'Estonia', 'Latvia', 'Lithuania'
+    'Armenia', 'Azerbaijan', 'Belarus', 'Estonia', 'Georgia',
+    'Kazakhstan', 'Kyrgyz Republic', 'Latvia', 'Lithuania',
+    'Moldova', 'Russian Federation', 'Tajikistan', 'Turkmenistan',
+    'Ukraine', 'Uzbekistan'
 ]
 
-# --- GDP PPP from World Bank ---
+country_map = {
+    'ARM': 'Armenia', 'AZE': 'Azerbaijan', 'BLR': 'Belarus', 'EST': 'Estonia',
+    'GEO': 'Georgia', 'KAZ': 'Kazakhstan', 'KGZ': 'Kyrgyz Republic',
+    'LVA': 'Latvia', 'LTU': 'Lithuania', 'MDA': 'Moldova',
+    'RUS': 'Russian Federation', 'TJK': 'Tajikistan', 'TKM': 'Turkmenistan',
+    'UKR': 'Ukraine', 'UZB': 'Uzbekistan'
+}
+
 def get_gdp_ppp():
-    country_map = {
-        "RU": "Russia", "UA": "Ukraine", "GE": "Georgia", "KZ": "Kazakhstan", "BY": "Belarus",
-        "AM": "Armenia", "AZ": "Azerbaijan", "MD": "Moldova", "UZ": "Uzbekistan",
-        "TM": "Turkmenistan", "KG": "Kyrgyzstan", "TJ": "Tajikistan", "EE": "Estonia",
-        "LV": "Latvia", "LT": "Lithuania"
-    }
-    indicators = {"NY.GDP.PCAP.PP.CD": "GDP PPP"}
-    # Get latest available year of data (most recent year as a single-point DataFrame)
-    df = wbdata.get_dataframe(indicators, country=list(country_map.keys()))
-    df = df.reset_index()
-    latest_year = df['date'].max()
-    df_latest = df[df['date'] == latest_year]
+    indicators = {'NY.GDP.PCAP.PP.CD': 'GDP per capita PPP'}
+    data = wbdata.get_dataframe(indicators, country=list(country_map.keys()), data_date=datetime(2023, 1, 1))
+    data.reset_index(inplace=True)
+    df_latest = data.sort_values("date").drop_duplicates("country", keep="last")
     df_latest['Country'] = df_latest['country'].map(country_map)
-    return df_latest[['Country', 'GDP PPP']]
+    return df_latest
 
-# --- Economic Freedom from Heritage ---
-from io import StringIO  # Add at the top
-
-def get_economic_freedom():
-    url = 'https://www.heritage.org/index/ranking'
-    r = requests.get(url)
-    soup = BeautifulSoup(r.text, 'lxml')
-    table = soup.find('table')
-
-    if table:
-        # Wrap HTML in StringIO (future-compatible) and ensure column check
-        tables = pd.read_html(StringIO(str(table)))
-        for df in tables:
-            if 'Country' in df.columns:
-                df = df[df['Country'].isin(post_soviet)]
-                df = df[['Country', 'Overall Score']]
-                df.columns = ['Country', 'Economic Freedom']
-                return df
-
-    # Fallback: raise if not found
-    raise ValueError("Expected table with 'Country' column not found in economic freedom data.")
-
-# --- Freedom Index Placeholder (manual or pre-saved) ---
 def get_freedom_index():
-    # Simulated placeholder data
-    freedom_data = {
-        'Country': post_soviet,
-        'Freedom Index': [20, 39, 61, 23, 19, 55, 28, 58, 11, 3, 27, 10, 94, 89, 91]
-    }
-    return pd.DataFrame(freedom_data)
+    url = 'https://freedomhouse.org/countries/freedom-world/scores'
+    r = requests.get(url)
+    soup = BeautifulSoup(r.content, 'html.parser')
+    table = soup.find('table')
+    df = pd.read_html(str(table))[0]
+    df = df[df['Country/Territory'].isin(post_soviet)]
+    return df
 
-# --- Merge Data ---
+# Load data
 gdp_df = get_gdp_ppp()
-eco_df = get_economic_freedom()
 freedom_df = get_freedom_index()
 
-combined = pd.merge(freedom_df, eco_df, on='Country')
-combined = pd.merge(combined, gdp_df, on='Country')
-
-# --- Initialize Dash App ---
+# Initialize Dash
 app = dash.Dash(__name__)
-server = app.server  # for deployment
+server = app.server
 
-# --- Layout ---
+# App layout
 app.layout = html.Div([
-    html.H1("Post-Soviet Space Index Dashboard", style={'textAlign': 'center'}),
+    html.H1("Post-Soviet Region Dashboard", style={'textAlign': 'center'}),
 
-    html.Div([
-        html.Label("Select Index to View:"),
-        dcc.Dropdown(
-            id='index-selector',
-            options=[
-                {'label': 'Freedom Index', 'value': 'Freedom Index'},
-                {'label': 'Economic Freedom', 'value': 'Economic Freedom'},
-                {'label': 'GDP PPP', 'value': 'GDP PPP'}
-            ],
-            value='Freedom Index'
-        )
-    ], style={'width': '40%', 'margin': 'auto'}),
-
-    dcc.Graph(id='dynamic-map'),
-
-    html.Div([
-        html.H2("Raw Data Table", style={'marginTop': '30px'}),
-        dash_table.DataTable(
-            columns=[{"name": col, "id": col} for col in combined.columns],
-            data=combined.to_dict('records'),
-            style_table={'overflowX': 'auto'},
-            style_header={"backgroundColor": "rgb(230, 230, 230)", "fontWeight": "bold"},
-            style_cell={"textAlign": "left", "padding": "5px"},
-        )
+    dcc.Tabs([
+        dcc.Tab(label='GDP per Capita PPP', children=[
+            dcc.Graph(
+                figure=px.bar(gdp_df, x='Country', y='GDP per capita PPP', title="GDP per capita PPP (USD)")
+            )
+        ]),
+        dcc.Tab(label='Freedom Index', children=[
+            dcc.Graph(
+                figure=px.choropleth(
+                    freedom_df,
+                    locations="Country/Territory",
+                    locationmode="country names",
+                    color="Aggregate Score",
+                    hover_name="Country/Territory",
+                    color_continuous_scale=px.colors.sequential.Reds,
+                    title="Freedom Index Map"
+                )
+            ),
+            html.Div([
+                html.H4("Freedom Index Table"),
+                dcc.Graph(
+                    figure=px.scatter(
+                        freedom_df,
+                        x="Country/Territory",
+                        y="Aggregate Score",
+                        title="Freedom Score by Country"
+                    )
+                )
+            ])
+        ])
     ])
 ])
-
-# --- Callbacks ---
-@app.callback(
-    Output('dynamic-map', 'figure'),
-    Input('index-selector', 'value')
-)
-def update_map(index):
-    return px.choropleth(
-        data_frame=combined,
-        locations='Country',
-        locationmode='country names',
-        color=index,
-        hover_name='Country',
-        color_continuous_scale='Viridis',
-        title=f'{index} Across Post-Soviet Countries'
-    )
 
 if __name__ == '__main__':
     app.run_server(debug=True)
