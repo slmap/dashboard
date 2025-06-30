@@ -24,10 +24,13 @@ def get_gdp_ppp():
         "LV": "Latvia", "LT": "Lithuania"
     }
     indicators = {"NY.GDP.PCAP.PP.CD": "GDP PPP"}
-    data = wbdata.get_dataframe(indicators, country=list(country_map.keys()), data_date=datetime(2023, 1, 1))
-    data.reset_index(inplace=True)
-    data['Country'] = data['country'].map(country_map)
-    return data[['Country', 'GDP PPP']]
+    # Get latest available year of data (most recent year as a single-point DataFrame)
+    df = wbdata.get_dataframe(indicators, country=list(country_map.keys()))
+    df = df.reset_index()
+    latest_year = df['date'].max()
+    df_latest = df[df['date'] == latest_year]
+    df_latest['Country'] = df_latest['country'].map(country_map)
+    return df_latest[['Country', 'GDP PPP']]
 
 # --- Economic Freedom from Heritage ---
 def get_economic_freedom():
