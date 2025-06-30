@@ -33,16 +33,26 @@ def get_gdp_ppp():
     return df_latest[['Country', 'GDP PPP']]
 
 # --- Economic Freedom from Heritage ---
+from io import StringIO  # Add at the top
+
 def get_economic_freedom():
     url = 'https://www.heritage.org/index/ranking'
     r = requests.get(url)
     soup = BeautifulSoup(r.text, 'lxml')
     table = soup.find('table')
-    df = pd.read_html(str(table))[0]
-    df = df[df['Country Name'].isin(post_soviet)]
-    df = df[['Country Name', 'Overall Score']]
-    df.columns = ['Country', 'Economic Freedom']
-    return df
+
+    if table:
+        # Wrap HTML in StringIO (future-compatible) and ensure column check
+        tables = pd.read_html(StringIO(str(table)))
+        for df in tables:
+            if 'Country' in df.columns:
+                df = df[df['Country'].isin(post_soviet)]
+                df = df[['Country', 'Overall Score']]
+                df.columns = ['Country', 'Economic Freedom']
+                return df
+
+    # Fallback: raise if not found
+    raise ValueError("Expected table with 'Country' column not found in economic freedom data.")
 
 # --- Freedom Index Placeholder (manual or pre-saved) ---
 def get_freedom_index():
